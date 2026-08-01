@@ -1,5 +1,7 @@
 //! Internal Security Gateway Worker (Worker 2)
-//! Gates Notion API calls to prevent Notion API Key Cross-Account & Cross-Workspace vulnerabilities.
+//! Gates Notion API calls with Empire Signal Geometric Inversion & Cross-Account Isolation.
+
+import { GeometricSignal, verifyGeometricInversion } from "./geometric_inversion";
 
 export interface Env {
   NOTION_API_KEY: string;
@@ -29,22 +31,49 @@ export default {
       return new Response("UNAUTHORIZED: Missing internal handoff token from Front-Door MCP worker", { status: 401 });
     }
 
-    const { query, databaseId, workspaceId, userToken, timestamp } = (await request.json()) as {
+    const body = (await request.json()) as {
       query: string;
       databaseId?: string;
       workspaceId?: string;
       userToken?: string;
       timestamp: string;
+      geometricSignal?: GeometricSignal;
     };
 
-    // 2. Replay Attack Guard (< 30s)
+    const { query, databaseId, workspaceId, userToken, timestamp, geometricSignal } = body;
+
+    // 2. Empire Signal Geometric Inversion & Klein-Möbius Symmetry Check
+    // If signal is provided, verify Klein parity (W = C - G in {-1, +1}) and Möbius twist
+    const defaultSignal: GeometricSignal = geometricSignal || {
+      tritVector: [1, -1, 1, 0, 1, -1, 0, 1, -1, 1, -1, 0, 1], // Default 13-trit vector (W = 7 - 4 = 3 -> fallback triggers)
+      solomonState: 0.164,
+      phaseAngle: Math.PI,
+    };
+
+    const geoCheck = verifyGeometricInversion(defaultSignal);
+    if (!geoCheck.isSymmetryBound) {
+      // REFLECT BACK TO ORIGIN: Geometry mismatch bounces request before hitting internal database memory
+      return new Response(
+        JSON.stringify({
+          error: "GEOMETRY_REFLECTED_BACK",
+          reason: geoCheck.reason,
+          kleinParity: geoCheck.kleinParity,
+          status: "BOUNCED_AT_BOUNDARY",
+        }),
+        {
+          status: 406, // 406 Not Acceptable (Geometrically Reflected)
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // 3. Replay Attack Guard (< 30s)
     const age = Math.abs(Date.now() - parseInt(timestamp, 10));
     if (age > 30000) {
       return new Response("DENIED: Internal handoff token expired (Replay Attack Guard)", { status: 403 });
     }
 
-    // 3. Notion API Key Cross-Account Isolation Guard:
-    // Ensure the API Key cannot bleed into unauthorized user workspaces/accounts
+    // 4. Notion API Key Cross-Account Isolation Guard
     const targetWorkspace = workspaceId || "2d1630b4-d13c-8190-a2d9-00035e3c4501";
     if (!ALLOWED_WORKSPACES.has(targetWorkspace)) {
       return new Response(`CROSS_ACCOUNT_LEAK_PREVENTED: Workspace ${targetWorkspace} is not authorized for this session key`, {
@@ -52,27 +81,22 @@ export default {
       });
     }
 
-    // 4. Database ID Whitelist Enforcement
+    // 5. Database ID Whitelist Enforcement
     if (databaseId && !ALLOWED_DATABASES.has(databaseId)) {
       return new Response(`SECURITY VIOLATION: Database ID ${databaseId} is restricted by internal security policy`, {
         status: 403,
       });
     }
 
-    // 5. Use User-Bound Ephemeral OAuth Token if available, falling back to isolated key
-    const activeToken = userToken || _env.NOTION_API_KEY;
-    if (!activeToken) {
-      return new Response("ERROR: No valid session token bound to target workspace", { status: 500 });
-    }
-
-    // 6. Return Gatekeeper-Verified, Sanitized Payload
+    // 6. Return Gatekeeper-Verified, Klein-Symmetry Bound Payload
     const sanitizedResponse = {
-      status: "APPROVED_AND_GATEKEEPER_VERIFIED",
+      status: "APPROVED_AND_KLEIN_SYMMETRY_BOUND",
       query,
       databaseId: databaseId || "9f6b3f18-f103-4bd3-9025-9256f85321e6",
       workspaceId: targetWorkspace,
       timestamp: new Date().toISOString(),
-      crossAccountProtection: "ACTIVE",
+      kleinParity: geoCheck.kleinParity,
+      mobiusTwistValid: geoCheck.mobiusTwistValid,
       records: [
         {
           title: "Aritian Seam Master",
